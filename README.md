@@ -1,18 +1,16 @@
-# Wbsmolen Columbia
+# homebrew-columbia
 
-## How do I install these formulae?
+Homebrew tap for [Columbia](https://github.com/wbsmolen/columbia) — operator-blind OHTTP middleware (relay, gateway, commons cache, token issuer).
 
-`brew install wbsmolen/columbia/<formula>`
+```sh
+brew tap wbsmolen/columbia
+brew install columbia
 
-Or `brew tap wbsmolen/columbia` and then `brew install <formula>`.
-
-Or, in a `brew bundle` `Brewfile`:
-
-```ruby
-tap "wbsmolen/columbia"
-brew "<formula>"
+columbia            # usage
+columbia commons    # run a service: relay | gateway | commons | issuer
 ```
 
-## Documentation
-
-`brew help`, `man brew` or check [Homebrew's documentation](https://docs.brew.sh).
+Each service is configured via environment variables — see the service READMEs and
+[SELFHOSTING.md](https://github.com/wbsmolen/columbia/blob/main/SELFHOSTING.md).
+The operator-blind guarantee requires the relay and gateway to run under separate,
+non-colluding operators; single-machine use is for development.
