@@ -24,7 +24,7 @@ class Columbia < Formula
       system "npm", "ci", "--omit=dev"
     end
 
-    node = Formula["node"].opt_bin/"node"
+    node = formula_opt_bin("node")/"node"
     (bin/"columbia").write <<~SH
       #!/bin/bash
       set -euo pipefail
