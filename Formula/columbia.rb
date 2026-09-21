@@ -1,37 +1,48 @@
 class Columbia < Formula
   desc "Operator-blind OHTTP middleware: relay, gateway, commons cache, token issuer"
   homepage "https://github.com/wbsmolen/columbia"
-  url "https://github.com/wbsmolen/columbia/archive/refs/tags/v1.4.4.tar.gz"
-  sha256 "fa5a1d6fcb49f1e91056746e58bfb90570853c6ce439d38841be05024446c938"
-  license "PolyForm-Noncommercial-1.0.0"
+  url "https://github.com/wbsmolen/columbia/archive/refs/tags/v1.7.0.tar.gz"
+  sha256 "bd4e4ad033d0ebc516ff3216121b2be903dc1670e992fceac4bd37ae4ebb4687"
+  license all_of: ["PolyForm-Noncommercial-1.0.0", "BSD-3-Clause"]
 
   depends_on "go" => :build
   depends_on "node"
 
   def install
-    # Gateway: static Go binary (deps are vendored in-tree).
+    # Build the gateway from its vendored Go dependencies.
     cd "ohttp-gateway" do
-      system "go", "build", "-o", libexec/"columbia-gateway"
+      system "go", "build", "-mod=vendor", "-trimpath", "-o", libexec/"columbia-gateway"
     end
 
-    # Relay and commons are dependency-free single-file Node services.
-    libexec.install "ohttp-relay/server.js" => "relay.js"
-    libexec.install "commons-cache/server.js" => "commons.js"
+    # Keep relative imports and locked production dependencies together.
+    {
+      "ohttp-relay"  => %w[server.js redemption-store.js issuer-key-cache.js],
+      "token-issuer" => %w[server.js appattest.js epoch-keys.js state-store.js],
+    }.each do |service, files|
+      service_dir = libexec/service
+      service_dir.install (files + %w[package.json package-lock.json]).map { |file| "#{service}/#{file}" }
+      cd service_dir do
+        system "npm", "ci", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund"
+      end
+    end
 
-    # Token issuer vendors its npm dependencies into libexec.
-    (libexec/"token-issuer").install Dir["token-issuer/*"]
-    cd libexec/"token-issuer" do
-      system "npm", "ci", "--omit=dev"
+    # Commons remains a dependency-free single-file service.
+    libexec.install "commons-cache/server.js" => "commons.js"
+    doc.install "LICENSE"
+    (doc/"ohttp-gateway").install "ohttp-gateway/LICENSE", "ohttp-gateway/VENDORED.md"
+    Pathname.glob("ohttp-gateway/vendor/**/{LICENSE*,COPYING*,NOTICE*,PATENTS*}").each do |notice|
+      (doc/notice.dirname).install notice if notice.file?
     end
 
     node = formula_opt_bin("node")/"node"
+    bin.mkpath
     (bin/"columbia").write <<~SH
       #!/bin/bash
       set -euo pipefail
       LIBEXEC="#{libexec}"
       cmd="${1:-}"
       case "$cmd" in
-        relay)   shift; exec "#{node}" "$LIBEXEC/relay.js" "$@" ;;
+        relay)   shift; exec "#{node}" "$LIBEXEC/ohttp-relay/server.js" "$@" ;;
         gateway) shift; exec "$LIBEXEC/columbia-gateway" "$@" ;;
         commons) shift; exec "#{node}" "$LIBEXEC/commons.js" "$@" ;;
         issuer)  shift; exec "#{node}" "$LIBEXEC/token-issuer/server.js" "$@" ;;
@@ -47,6 +58,7 @@ class Columbia < Formula
           ;;
       esac
     SH
+    (bin/"columbia").chmod 0755
   end
 
   def caveats
@@ -60,15 +72,34 @@ class Columbia < Formula
 
   test do
     assert_match "columbia #{version}", shell_output("#{bin}/columbia version")
+    assert_path_exists doc/"ohttp-gateway/LICENSE"
+    assert_path_exists doc/"ohttp-gateway/vendor/github.com/cloudflare/circl/LICENSE"
 
-    port = free_port
-    pid = spawn({ "PORT" => port.to_s }, bin/"columbia", "commons")
-    begin
-      sleep 3
-      assert_match "ok", shell_output("curl -s http://127.0.0.1:#{port}/health")
-    ensure
-      Process.kill("TERM", pid)
-      Process.wait(pid)
+    %w[ohttp-relay token-issuer].each do |service|
+      assert_path_exists libexec/service/"node_modules/@azure/data-tables/package.json"
+    end
+
+    %w[commons gateway relay issuer].each do |service|
+      port = free_port
+      env = { "PORT" => port.to_s }
+      env["GATEWAY_URL"] = "https://127.0.0.1:#{port}/gateway" if service == "relay"
+      pid = spawn(env, bin/"columbia", service, unsetenv_others: true,
+                  out: (testpath/"#{service}.log").to_s, err: [:child, :out])
+      begin
+        assert_match "ok", shell_output("curl --fail --silent --show-error --retry 10 " \
+                                        "--retry-connrefused --retry-delay 1 --retry-max-time 15 " \
+                                        "http://127.0.0.1:#{port}/health")
+        next if service != "issuer"
+
+        # A fresh installation has no signing key and must fail closed.
+        assert_match "HTTP/1.1 503 Service Unavailable",
+                     shell_output("curl --silent --include http://127.0.0.1:#{port}/issuer-keys")
+      ensure
+        if Process.waitpid(pid, Process::WNOHANG).nil?
+          Process.kill("TERM", pid)
+          Process.wait(pid)
+        end
+      end
     end
   end
 end
