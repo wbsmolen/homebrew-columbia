@@ -10,6 +10,11 @@ columbia            # usage
 columbia commons    # run a service: relay | gateway | commons | issuer
 ```
 
+The formula packages Columbia 1.7.0 with the relay and issuer's locked production
+dependencies. Existing installations can update with `brew update` followed by
+`brew upgrade columbia`. Services are started explicitly; installation does not
+enable token enforcement or configure signing keys or shared state.
+
 Each service is configured via environment variables — see the service READMEs and
 [SELFHOSTING.md](https://github.com/wbsmolen/columbia/blob/main/SELFHOSTING.md).
 The operator-blind guarantee requires the relay and gateway to run under separate,

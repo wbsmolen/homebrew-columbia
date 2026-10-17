@@ -3,7 +3,7 @@ name: brew test-bot
 on:
   push:
     branches:
-      - main
+      - master
   pull_request:
 
 jobs:
@@ -44,6 +44,44 @@ jobs:
       - run: brew test-bot --only-tap-syntax
       - run: brew test-bot --only-formulae
         if: github.event_name == 'pull_request'
+
+      - name: Qualify Intel source installation
+        if: github.event_name == 'pull_request' && matrix.os == 'macos-15-intel'
+        timeout-minutes: 60
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
+        run: |
+          set -euo pipefail
+          : "${GITHUB_SHA:?GitHub candidate commit is required}" "${RUNNER_TEMP:?Runner temporary directory is required}"
+          {
+            architecture="$(uname -m)"
+            test "${architecture}" = "x86_64"
+            sw_vers
+            tap_path="$(brew --repo wbsmolen/columbia)"
+            git -C "${tap_path}" diff --exit-code "${GITHUB_SHA}" -- Formula/columbia.rb
+            expected_version="$(brew info --formula --json=v2 wbsmolen/columbia/columbia | ruby -rjson -e 'print JSON.parse(STDIN.read).fetch("formulae").first.fetch("versions").fetch("stable")')"
+            brew install --formula --only-dependencies --include-test --verbose wbsmolen/columbia/columbia
+            if brew list --formula --versions wbsmolen/columbia/columbia >/dev/null 2>&1
+            then
+              brew reinstall --formula --build-from-source --verbose wbsmolen/columbia/columbia
+            else
+              brew install --formula --build-from-source --verbose wbsmolen/columbia/columbia
+            fi
+            git -C "${tap_path}" diff --exit-code "${GITHUB_SHA}" -- Formula/columbia.rb
+            installed_prefix="$(brew --prefix wbsmolen/columbia/columbia)"
+            installed_version="$("${installed_prefix}/bin/columbia" version)"
+            test "${installed_version}" = "columbia ${expected_version}"
+            brew list --versions go node wbsmolen/columbia/columbia
+            brew linkage --test wbsmolen/columbia/columbia
+            brew test --verbose wbsmolen/columbia/columbia
+          } 2>&1 | tee "${RUNNER_TEMP}/columbia-intel-source-qualification.log"
+
+      - name: Retain Intel source qualification log
+        if: always() && github.event_name == 'pull_request' && matrix.os == 'macos-15-intel'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: intel-source-qualification
+          path: ${{ runner.temp }}/columbia-intel-source-qualification.log
 
       - name: Upload bottles as artifact
         if: always() && github.event_name == 'pull_request'
