@@ -1,8 +1,8 @@
 class Columbia < Formula
   desc "Operator-blind OHTTP middleware: relay, gateway, commons cache, token issuer"
   homepage "https://github.com/wbsmolen/columbia"
-  url "https://github.com/wbsmolen/columbia/archive/refs/tags/v1.7.1.tar.gz"
-  sha256 "3756af5011fd884cce50eeaf36d08c3ff71e1905e1cd368755d9e6a0c8ac4310"
+  url "https://github.com/wbsmolen/columbia/archive/refs/tags/v1.7.2.tar.gz"
+  sha256 "b3cce2211f01fdb6e3d0ffd2970a9bbdaa8d7d4d8e0a5d806015dd913674865b"
   license all_of: ["PolyForm-Noncommercial-1.0.0", "BSD-3-Clause"]
 
   depends_on "go" => :build
